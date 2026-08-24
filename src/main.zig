@@ -11,6 +11,8 @@ pub fn main() void {
 
     rl.setTargetFPS(60);
 
+    rl.hideCursor();
+
     while (!rl.windowShouldClose()) {
         const delta_time: f32 = rl.getFrameTime();
         updatePlayer(delta_time);
@@ -22,7 +24,16 @@ pub fn main() void {
 
         draw_map();
 
+        draw_ray_debug();
+
         rl.drawFPS(10, 10);
+
+        rl.drawCircle(
+            @intFromFloat(player_x),
+            @intFromFloat(player_y),
+            player_radius,
+            rl.Color.yellow,
+        );
     }
 }
 
@@ -75,13 +86,18 @@ fn draw_map() void {
 }
 
 // Estado inicial del jugador
-var player_x: f32 = 1.5 * cell_size; // centro de la celda [1][1]
+var player_x: f32 = 1.5 * cell_size;
 var player_y: f32 = 1.5 * cell_size;
 var player_angle: f32 = 0.0;
 
 const player_speed: f32 = 100.0;
 const player_radius: f32 = 10.0;
 
+const mouse_sensitivity: f32 = 0.003; //sensibilidad del mouse
+
+// SISTEMA DE COLISOINES
+
+// Función para verificar si una posición es una pared
 fn isWall(x: f32, y: f32) bool {
     if (x < 0 or y < 0) return true;
     const col: usize = @intFromFloat(x / cell_size);
@@ -89,6 +105,7 @@ fn isWall(x: f32, y: f32) bool {
     return get_map_tile(col, row) != 0;
 }
 
+// Intenta mover al jugador en la dirección especificada, verificando colisiones con paredes
 fn tryMovePlayer(dx: f32, dy: f32) void {
     // Revisa el eje X de forma independiente
     const new_x = player_x + dx;
@@ -107,8 +124,16 @@ fn tryMovePlayer(dx: f32, dy: f32) void {
     }
 }
 
-// Actualiza la posición del jugador basado en la entrada del teclado
+// Actualiza la posición del jugador basado en la entrada del teclado y el movimiento del mouse
 fn updatePlayer(delta_time: f32) void {
+    const mouse_delta = rl.getMouseDelta();
+    player_angle += mouse_delta.x * mouse_sensitivity;
+
+    // Mantener el ángulo del jugador dentro del rango
+    const screen_center_x = @divTrunc(rl.getScreenWidth(), 2);
+    const screen_center_y = @divTrunc(rl.getScreenHeight(), 2);
+    rl.setMousePosition(screen_center_x, screen_center_y);
+
     var move_x: f32 = 0.0;
     var move_y: f32 = 0.0;
 
@@ -122,4 +147,86 @@ fn updatePlayer(delta_time: f32) void {
     }
 
     tryMovePlayer(move_x, move_y);
+}
+
+// RAYCASTER
+const RayHit = struct {
+    distance: f32,
+    wall_type: u8,
+    side: u8, // 0 = pared vertical, 1 = pared horizontal
+};
+
+fn castRay(angle: f32) RayHit {
+    const ray_dir_x = @cos(angle);
+    const ray_dir_y = @sin(angle);
+
+    var map_x: i32 = @intFromFloat(player_x / cell_size);
+    var map_y: i32 = @intFromFloat(player_y / cell_size);
+
+    const delta_dist_x = if (ray_dir_x == 0) std.math.inf(f32) else @abs(1.0 / ray_dir_x);
+    const delta_dist_y = if (ray_dir_y == 0) std.math.inf(f32) else @abs(1.0 / ray_dir_y);
+
+    var step_x: i32 = undefined;
+    var step_y: i32 = undefined;
+    var side_dist_x: f32 = undefined;
+    var side_dist_y: f32 = undefined;
+
+    if (ray_dir_x < 0) {
+        step_x = -1;
+        side_dist_x = (player_x / cell_size - @as(f32, @floatFromInt(map_x))) * delta_dist_x;
+    } else {
+        step_x = 1;
+        side_dist_x = (@as(f32, @floatFromInt(map_x)) + 1.0 - player_x / cell_size) * delta_dist_x;
+    }
+
+    if (ray_dir_y < 0) {
+        step_y = -1;
+        side_dist_y = (player_y / cell_size - @as(f32, @floatFromInt(map_y))) * delta_dist_y;
+    } else {
+        step_y = 1;
+        side_dist_y = (@as(f32, @floatFromInt(map_y)) + 1.0 - player_y / cell_size) * delta_dist_y;
+    }
+
+    var side: u8 = 0;
+    var hit_wall: u8 = 0;
+
+    while (hit_wall == 0) {
+        if (side_dist_x < side_dist_y) {
+            side_dist_x += delta_dist_x;
+            map_x += step_x;
+            side = 0;
+        } else {
+            side_dist_y += delta_dist_y;
+            map_y += step_y;
+            side = 1;
+        }
+
+        hit_wall = get_map_tile(@intCast(map_x), @intCast(map_y));
+    }
+
+    const perp_dist = if (side == 0)
+        side_dist_x - delta_dist_x
+    else
+        side_dist_y - delta_dist_y;
+
+    return RayHit{
+        .distance = perp_dist * cell_size,
+        .wall_type = hit_wall,
+        .side = side,
+    };
+}
+
+fn draw_ray_debug() void {
+    const hit = castRay(player_angle);
+
+    const end_x = player_x + @cos(player_angle) * hit.distance;
+    const end_y = player_y + @sin(player_angle) * hit.distance;
+
+    rl.drawLine(
+        @intFromFloat(player_x),
+        @intFromFloat(player_y),
+        @intFromFloat(end_x),
+        @intFromFloat(end_y),
+        rl.Color.yellow,
+    );
 }
