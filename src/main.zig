@@ -22,18 +22,15 @@ pub fn main() void {
 
         rl.clearBackground(rl.Color.black);
 
-        draw_map();
+        //draw_map();
 
-        draw_ray_debug();
+        draw3DView(window_width, window_height);
+
+        draw_minimap(window_width);
+
+        //draw_ray_debug();
 
         rl.drawFPS(10, 10);
-
-        rl.drawCircle(
-            @intFromFloat(player_x),
-            @intFromFloat(player_y),
-            player_radius,
-            rl.Color.yellow,
-        );
     }
 }
 
@@ -63,6 +60,7 @@ fn get_map_tile(x: usize, y: usize) u8 {
     return game_map[y][x];
 }
 
+// Dibja mapa en 2D para debugueo
 fn draw_map() void {
     for (0..map_height) |y| {
         for (0..map_width) |x| {
@@ -216,6 +214,7 @@ fn castRay(angle: f32) RayHit {
     };
 }
 
+// Función para dibujar el rayo de depuración desde la posición del jugador hasta el punto de colisión
 fn draw_ray_debug() void {
     const hit = castRay(player_angle);
 
@@ -227,6 +226,115 @@ fn draw_ray_debug() void {
         @intFromFloat(player_y),
         @intFromFloat(end_x),
         @intFromFloat(end_y),
+        rl.Color.yellow,
+    );
+}
+
+const fov: f32 = std.math.degreesToRadians(60.0);
+
+fn draw3DView(screen_width: i32, screen_height: i32) void {
+    const half_fov = fov / 2.0;
+
+    // Calculo del FOV
+    var col: i32 = 0;
+    while (col < screen_width) : (col += 1) {
+        const camera_x = @as(f32, @floatFromInt(col)) / @as(f32, @floatFromInt(screen_width));
+        const ray_angle = (player_angle - half_fov) + camera_x * fov;
+
+        const hit = castRay(ray_angle);
+
+        // Corrección de fisheye
+        const corrected_dist = hit.distance * @cos(ray_angle - player_angle);
+
+        // Dibujo de la pared
+        const wall_height: f32 = @as(f32, @floatFromInt(screen_height)) / corrected_dist * cell_size;
+
+        const draw_start = -wall_height / 2.0 + @as(f32, @floatFromInt(screen_height)) / 2.0;
+        const draw_end = wall_height / 2.0 + @as(f32, @floatFromInt(screen_height)) / 2.0;
+
+        // Colores segun el tipo de pared
+        var color = switch (hit.wall_type) {
+            1 => rl.Color.gray,
+            2 => rl.Color.red,
+            3 => rl.Color.green,
+            else => rl.Color.white,
+        };
+
+        // Oscurecer el color si es una pared horizontal
+        if (hit.side == 1) {
+            color = rl.Color{
+                .r = color.r / 2,
+                .g = color.g / 2,
+                .b = color.b / 2,
+                .a = color.a,
+            };
+        }
+
+        // Dibuja la línea vertical de la pared
+        rl.drawLine(
+            col,
+            @intFromFloat(draw_start),
+            col,
+            @intFromFloat(draw_end),
+            color,
+        );
+    }
+}
+
+// Minimapa
+const minimap_cell_size: f32 = 6.0;
+const minimap_margin: f32 = 10.0;
+const minimap_offset_y: f32 = 10.0;
+
+fn draw_minimap(screen_width: i32) void {
+    const minimap_width = @as(f32, @floatFromInt(map_width)) * minimap_cell_size;
+    const minimap_offset_x = @as(f32, @floatFromInt(screen_width)) - minimap_width - minimap_margin;
+
+    for (0..map_height) |y| {
+        for (0..map_width) |x| {
+            const tile = get_map_tile(x, y);
+            const color = switch (tile) {
+                0 => rl.Color.black,
+                1 => rl.Color.gray,
+                2 => rl.Color.red,
+                3 => rl.Color.green,
+                else => rl.Color.black,
+            };
+
+            const draw_x = minimap_offset_x + @as(f32, @floatFromInt(x)) * minimap_cell_size;
+            const draw_y = minimap_offset_y + @as(f32, @floatFromInt(y)) * minimap_cell_size;
+
+            rl.drawRectangle(
+                @intFromFloat(draw_x),
+                @intFromFloat(draw_y),
+                @intFromFloat(minimap_cell_size),
+                @intFromFloat(minimap_cell_size),
+                color,
+            );
+        }
+    }
+
+    // Posición del jugador escalada al minimapa
+    const player_map_x = minimap_offset_x + (player_x / cell_size) * minimap_cell_size;
+    const player_map_y = minimap_offset_y + (player_y / cell_size) * minimap_cell_size;
+
+    rl.drawCircle(
+        @intFromFloat(player_map_x),
+        @intFromFloat(player_map_y),
+        3.0,
+        rl.Color.yellow,
+    );
+
+    // Línea indicando hacia donde mira el jugador
+    const dir_len: f32 = 10.0;
+    const dir_end_x = player_map_x + @cos(player_angle) * dir_len;
+    const dir_end_y = player_map_y + @sin(player_angle) * dir_len;
+
+    rl.drawLine(
+        @intFromFloat(player_map_x),
+        @intFromFloat(player_map_y),
+        @intFromFloat(dir_end_x),
+        @intFromFloat(dir_end_y),
         rl.Color.yellow,
     );
 }
