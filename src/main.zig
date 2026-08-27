@@ -19,7 +19,9 @@ pub fn main() void {
             .playing => {
                 const delta_time: f32 = rl.getFrameTime();
                 updatePlayer(delta_time);
+                checkWinCondition();
             },
+            .success => updateSuccess(),
         }
 
         rl.beginDrawing();
@@ -34,6 +36,7 @@ pub fn main() void {
                 drawSprite(enemy_sprite, window_width, window_height);
                 draw_minimap(window_width);
             },
+            .success => drawSuccess(window_width, window_height),
         }
 
         rl.drawFPS(10, 10);
@@ -375,6 +378,7 @@ fn draw_minimap(screen_width: i32) void {
 const GameState = enum {
     menu,
     playing,
+    success,
 };
 
 var game_state: GameState = .menu;
@@ -475,5 +479,30 @@ fn drawSprite(sprite: Sprite, screen_width: i32, screen_height: i32) void {
                 rl.Color.purple,
             );
         }
+    }
+}
+
+// condicion para ganar el juego
+const win_distance: f32 = 30.0;
+
+fn checkWinCondition() void {
+    const dx = enemy_sprite.x - player_x;
+    const dy = enemy_sprite.y - player_y;
+    const dist = @sqrt(dx * dx + dy * dy);
+
+    if (dist < win_distance) {
+        game_state = .success;
+    }
+}
+
+// pantalla de exito
+fn drawSuccess(screen_width: i32, screen_height: i32) void {
+    rl.drawText("NIVEL COMPLETADO", @divTrunc(screen_width, 2) - 180, @divTrunc(screen_height, 2) - 40, 40, rl.Color.green);
+    rl.drawText("Presiona ENTER para volver al menu", @divTrunc(screen_width, 2) - 180, @divTrunc(screen_height, 2) + 20, 20, rl.Color.light_gray);
+}
+
+fn updateSuccess() void {
+    if (rl.isKeyPressed(.enter)) {
+        game_state = .menu;
     }
 }
