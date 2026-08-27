@@ -14,31 +14,37 @@ pub fn main() void {
     rl.hideCursor();
 
     while (!rl.windowShouldClose()) {
-        const delta_time: f32 = rl.getFrameTime();
-        updatePlayer(delta_time);
+        switch (game_state) {
+            .menu => updateMenu(),
+            .playing => {
+                const delta_time: f32 = rl.getFrameTime();
+                updatePlayer(delta_time);
+            },
+        }
 
         rl.beginDrawing();
         defer rl.endDrawing();
 
         rl.clearBackground(rl.Color.black);
 
-        //draw_map();
-
-        draw3DView(window_width, window_height);
-
-        draw_minimap(window_width);
-
-        //draw_ray_debug();
+        switch (game_state) {
+            .menu => drawMenu(window_width, window_height),
+            .playing => {
+                draw3DView(window_width, window_height);
+                drawSprite(enemy_sprite, window_width, window_height);
+                draw_minimap(window_width);
+            },
+        }
 
         rl.drawFPS(10, 10);
     }
 }
 
-// Mapa del juego
+// Mapas del juego
 const map_width: usize = 10;
 const map_height: usize = 10;
 
-const game_map = [map_height][map_width]u8{
+const level_1 = [map_height][map_width]u8{
     .{ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
     .{ 1, 0, 0, 0, 0, 0, 0, 0, 0, 1 },
     .{ 1, 0, 0, 0, 0, 0, 0, 0, 0, 1 },
@@ -51,13 +57,28 @@ const game_map = [map_height][map_width]u8{
     .{ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
 };
 
+const level_2 = [map_height][map_width]u8{
+    .{ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
+    .{ 1, 0, 0, 0, 1, 0, 0, 0, 0, 1 },
+    .{ 1, 0, 3, 0, 1, 0, 2, 2, 0, 1 },
+    .{ 1, 0, 0, 0, 0, 0, 2, 2, 0, 1 },
+    .{ 1, 1, 0, 1, 1, 1, 0, 1, 1, 1 },
+    .{ 1, 0, 0, 0, 0, 0, 0, 0, 0, 1 },
+    .{ 1, 0, 1, 1, 0, 1, 1, 0, 3, 1 },
+    .{ 1, 0, 1, 0, 0, 0, 1, 0, 0, 1 },
+    .{ 1, 0, 0, 0, 2, 0, 0, 0, 0, 1 },
+    .{ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
+};
+
+const levels = [_][map_height][map_width]u8{ level_1, level_2 };
+
 const cell_size: f32 = 64.0;
 
 fn get_map_tile(x: usize, y: usize) u8 {
     if (x >= map_width or y >= map_height) {
         return 1;
     }
-    return game_map[y][x];
+    return levels[selected_level][y][x];
 }
 
 // Dibja mapa en 2D para debugueo
@@ -142,6 +163,14 @@ fn updatePlayer(delta_time: f32) void {
     if (rl.isKeyDown(.s)) {
         move_x -= @cos(player_angle) * player_speed * delta_time;
         move_y -= @sin(player_angle) * player_speed * delta_time;
+    }
+    if (rl.isKeyDown(.d)) {
+        move_x += -@sin(player_angle) * player_speed * delta_time;
+        move_y += @cos(player_angle) * player_speed * delta_time;
+    }
+    if (rl.isKeyDown(.a)) {
+        move_x -= -@sin(player_angle) * player_speed * delta_time;
+        move_y -= @cos(player_angle) * player_speed * delta_time;
     }
 
     tryMovePlayer(move_x, move_y);
@@ -246,6 +275,9 @@ fn draw3DView(screen_width: i32, screen_height: i32) void {
         // Corrección de fisheye
         const corrected_dist = hit.distance * @cos(ray_angle - player_angle);
 
+        // distancia al buffer de profundidad para el sprite
+        depth_buffer[@intCast(col)] = corrected_dist;
+
         // Dibujo de la pared
         const wall_height: f32 = @as(f32, @floatFromInt(screen_height)) / corrected_dist * cell_size;
 
@@ -337,4 +369,111 @@ fn draw_minimap(screen_width: i32) void {
         @intFromFloat(dir_end_y),
         rl.Color.yellow,
     );
+}
+
+// Maquina de estados del juego
+const GameState = enum {
+    menu,
+    playing,
+};
+
+var game_state: GameState = .menu;
+var selected_level: usize = 0;
+
+// Reseteo de la posicion del jugador al iniciar un nivel
+fn startLevel(level_index: usize) void {
+    selected_level = level_index;
+    player_x = 1.5 * cell_size;
+    player_y = 1.5 * cell_size;
+    player_angle = 0.0;
+    game_state = .playing;
+}
+
+// Menu
+fn drawMenu(screen_width: i32, screen_height: i32) void {
+    rl.drawText("RAYCASTER DOOM", @divTrunc(screen_width, 2) - 150, 100, 40, rl.Color.white);
+    rl.drawText("Selecciona un nivel:", @divTrunc(screen_width, 2) - 100, 200, 20, rl.Color.light_gray);
+
+    for (0..levels.len) |i| {
+        const color = if (i == selected_level) rl.Color.yellow else rl.Color.gray;
+        const y_pos: i32 = 250 + @as(i32, @intCast(i)) * 40;
+
+        const name: [:0]const u8 = switch (i) {
+            0 => "Nivel 1",
+            1 => "Nivel 2",
+            else => "Nivel ?",
+        };
+
+        rl.drawText(name, @divTrunc(screen_width, 2) - 50, y_pos, 20, color);
+    }
+
+    rl.drawText("Flechas para elegir, ENTER para jugar", @divTrunc(screen_width, 2) - 160, screen_height - 50, 16, rl.Color.light_gray);
+}
+
+fn updateMenu() void {
+    if (rl.isKeyPressed(.down)) {
+        selected_level = (selected_level + 1) % levels.len;
+    }
+    if (rl.isKeyPressed(.up)) {
+        selected_level = if (selected_level == 0) levels.len - 1 else selected_level - 1;
+    }
+    if (rl.isKeyPressed(.enter)) {
+        startLevel(selected_level);
+    }
+}
+
+// buffer de profundidad para el sprite
+var depth_buffer: [2000]f32 = undefined;
+
+// Sprite
+var sprite_x: f32 = 5.5 * cell_size;
+var sprite_y: f32 = 5.5 * cell_size;
+
+const Sprite = struct {
+    x: f32,
+    y: f32,
+};
+
+var enemy_sprite = Sprite{ .x = 5.5 * cell_size, .y = 5.5 * cell_size };
+
+fn drawSprite(sprite: Sprite, screen_width: i32, screen_height: i32) void {
+    const dx = sprite.x - player_x;
+    const dy = sprite.y - player_y;
+
+    const dist = @sqrt(dx * dx + dy * dy);
+
+    var angle_to_sprite = std.math.atan2(dy, dx) - player_angle;
+
+    while (angle_to_sprite > std.math.pi) angle_to_sprite -= 2.0 * std.math.pi;
+    while (angle_to_sprite < -std.math.pi) angle_to_sprite += 2.0 * std.math.pi;
+
+    if (@abs(angle_to_sprite) > fov / 2.0 + 0.2) return;
+
+    const screen_x_frac = (angle_to_sprite + fov / 2.0) / fov;
+    const screen_x = screen_x_frac * @as(f32, @floatFromInt(screen_width));
+
+    const corrected_dist = dist * @cos(angle_to_sprite);
+    if (corrected_dist <= 0.1) return; // demasiado cerca, evita división por casi cero
+
+    const sprite_screen_size = @as(f32, @floatFromInt(screen_height)) / corrected_dist * cell_size * 0.6;
+
+    const draw_start_x = screen_x - sprite_screen_size / 2.0;
+    const draw_end_x = screen_x + sprite_screen_size / 2.0;
+    const draw_start_y = @as(f32, @floatFromInt(screen_height)) / 2.0 - sprite_screen_size / 2.0;
+    const draw_end_y = @as(f32, @floatFromInt(screen_height)) / 2.0 + sprite_screen_size / 2.0;
+
+    var col_x: i32 = @intFromFloat(@max(draw_start_x, 0));
+    const col_end: i32 = @intFromFloat(@min(draw_end_x, @as(f32, @floatFromInt(screen_width))));
+
+    while (col_x < col_end) : (col_x += 1) {
+        if (corrected_dist < depth_buffer[@intCast(col_x)]) {
+            rl.drawLine(
+                col_x,
+                @intFromFloat(draw_start_y),
+                col_x,
+                @intFromFloat(draw_end_y),
+                rl.Color.purple,
+            );
+        }
+    }
 }
