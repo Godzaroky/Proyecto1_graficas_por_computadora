@@ -6,8 +6,11 @@ pub fn main() void {
     const window_width: i32 = @intFromFloat(@as(f32, @floatFromInt(map_width)) * cell_size);
     const window_height: i32 = @intFromFloat(@as(f32, @floatFromInt(map_height)) * cell_size);
 
-    rl.initWindow(window_width, window_height, "Raycaster Doom");
+    rl.initWindow(window_width, window_height, "Raycaster");
     defer rl.closeWindow();
+
+    loadTextures();
+    defer unloadTextures();
 
     rl.setTargetFPS(60);
 
@@ -184,6 +187,7 @@ const RayHit = struct {
     distance: f32,
     wall_type: u8,
     side: u8, // 0 = pared vertical, 1 = pared horizontal
+    wall_x: f32, // posición exacta de la pared donde el rayo golpeó
 };
 
 fn castRay(angle: f32) RayHit {
@@ -239,10 +243,19 @@ fn castRay(angle: f32) RayHit {
     else
         side_dist_y - delta_dist_y;
 
+    var wall_x: f32 = undefined;
+    if (side == 0) {
+        wall_x = player_y / cell_size + perp_dist * ray_dir_y;
+    } else {
+        wall_x = player_x / cell_size + perp_dist * ray_dir_x;
+    }
+    wall_x -= @floor(wall_x);
+
     return RayHit{
         .distance = perp_dist * cell_size,
         .wall_type = hit_wall,
         .side = side,
+        .wall_x = wall_x,
     };
 }
 
@@ -305,13 +318,32 @@ fn draw3DView(screen_width: i32, screen_height: i32) void {
             };
         }
 
-        // Dibuja la línea vertical de la pared
-        rl.drawLine(
-            col,
-            @intFromFloat(draw_start),
-            col,
-            @intFromFloat(draw_end),
-            color,
+        // dibuja texturas
+        const texture = wall_textures[hit.wall_type - 1];
+        const tex_width_f: f32 = @floatFromInt(texture.width);
+
+        var tex_x: i32 = @intFromFloat(hit.wall_x * tex_width_f);
+
+        // Evita efecto espejo según la orientación del rayo
+        if (hit.side == 0 and @cos(ray_angle) > 0) {
+            tex_x = @intCast(texture.width - 1 - @as(i32, @intCast(tex_x)));
+        }
+        if (hit.side == 1 and @sin(ray_angle) < 0) {
+            tex_x = @intCast(texture.width - 1 - @as(i32, @intCast(tex_x)));
+        }
+
+        var tint = rl.Color.white;
+        if (hit.side == 1) {
+            tint = rl.Color{ .r = 180, .g = 180, .b = 180, .a = 255 };
+        }
+
+        rl.drawTexturePro(
+            texture,
+            rl.Rectangle{ .x = @floatFromInt(tex_x), .y = 0, .width = 1, .height = @floatFromInt(texture.height) },
+            rl.Rectangle{ .x = @floatFromInt(col), .y = draw_start, .width = 1, .height = draw_end - draw_start },
+            rl.Vector2{ .x = 0, .y = 0 },
+            0.0,
+            tint,
         );
     }
 }
@@ -504,5 +536,20 @@ fn drawSuccess(screen_width: i32, screen_height: i32) void {
 fn updateSuccess() void {
     if (rl.isKeyPressed(.enter)) {
         game_state = .menu;
+    }
+}
+
+// texturas
+var wall_textures: [3]rl.Texture2D = undefined;
+
+fn loadTextures() void {
+    wall_textures[0] = rl.loadTexture("assets/brick.png") catch @panic("No se pudo cargar assets/brick.png");
+    wall_textures[1] = rl.loadTexture("assets/bonewall.png") catch @panic("No se pudo cargar assets/bonewall.png");
+    wall_textures[2] = rl.loadTexture("assets/whitewall.png") catch @panic("No se pudo cargar assets/whitewall.png");
+}
+
+fn unloadTextures() void {
+    for (wall_textures) |tex| {
+        rl.unloadTexture(tex);
     }
 }
