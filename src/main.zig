@@ -87,29 +87,6 @@ fn get_map_tile(x: usize, y: usize) u8 {
     return levels[selected_level][y][x];
 }
 
-// Dibja mapa en 2D para debugueo
-fn draw_map() void {
-    for (0..map_height) |y| {
-        for (0..map_width) |x| {
-            const tile = get_map_tile(x, y);
-            const color = switch (tile) {
-                0 => rl.Color.black, // espacio vacio
-                1 => rl.Color.gray, // pared
-                2 => rl.Color.red, // enemigo
-                3 => rl.Color.green, // jugador
-                else => rl.Color.black,
-            };
-            rl.drawRectangle(
-                @intCast(x * @as(usize, @intFromFloat(cell_size))),
-                @intCast(y * @as(usize, @intFromFloat(cell_size))),
-                @intFromFloat(cell_size),
-                @intFromFloat(cell_size),
-                color,
-            );
-        }
-    }
-}
-
 // Estado inicial del jugador
 var player_x: f32 = 1.5 * cell_size;
 var player_y: f32 = 1.5 * cell_size;
@@ -257,22 +234,6 @@ fn castRay(angle: f32) RayHit {
         .side = side,
         .wall_x = wall_x,
     };
-}
-
-// Función para dibujar el rayo de depuración desde la posición del jugador hasta el punto de colisión
-fn draw_ray_debug() void {
-    const hit = castRay(player_angle);
-
-    const end_x = player_x + @cos(player_angle) * hit.distance;
-    const end_y = player_y + @sin(player_angle) * hit.distance;
-
-    rl.drawLine(
-        @intFromFloat(player_x),
-        @intFromFloat(player_y),
-        @intFromFloat(end_x),
-        @intFromFloat(end_y),
-        rl.Color.yellow,
-    );
 }
 
 const fov: f32 = std.math.degreesToRadians(60.0);
@@ -427,7 +388,7 @@ fn startLevel(level_index: usize) void {
 
 // Menu
 fn drawMenu(screen_width: i32, screen_height: i32) void {
-    rl.drawText("RAYCASTER DOOM", @divTrunc(screen_width, 2) - 150, 100, 40, rl.Color.white);
+    rl.drawText("RAYCASTER", @divTrunc(screen_width, 2) - 150, 100, 40, rl.Color.white);
     rl.drawText("Selecciona un nivel:", @divTrunc(screen_width, 2) - 100, 200, 20, rl.Color.light_gray);
 
     for (0..levels.len) |i| {
@@ -503,12 +464,17 @@ fn drawSprite(sprite: Sprite, screen_width: i32, screen_height: i32) void {
 
     while (col_x < col_end) : (col_x += 1) {
         if (corrected_dist < depth_buffer[@intCast(col_x)]) {
-            rl.drawLine(
-                col_x,
-                @intFromFloat(draw_start_y),
-                col_x,
-                @intFromFloat(draw_end_y),
-                rl.Color.purple,
+            const col_x_f: f32 = @floatFromInt(col_x);
+            const tex_x_frac = (col_x_f - draw_start_x) / (draw_end_x - draw_start_x);
+            const tex_x: i32 = @intFromFloat(tex_x_frac * @as(f32, @floatFromInt(sprite_texture.width)));
+
+            rl.drawTexturePro(
+                sprite_texture,
+                rl.Rectangle{ .x = @floatFromInt(tex_x), .y = 0, .width = 1, .height = @floatFromInt(sprite_texture.height) },
+                rl.Rectangle{ .x = col_x_f, .y = draw_start_y, .width = 1, .height = draw_end_y - draw_start_y },
+                rl.Vector2{ .x = 0, .y = 0 },
+                0.0,
+                rl.Color.white,
             );
         }
     }
@@ -541,15 +507,18 @@ fn updateSuccess() void {
 
 // texturas
 var wall_textures: [3]rl.Texture2D = undefined;
+var sprite_texture: rl.Texture2D = undefined;
 
 fn loadTextures() void {
     wall_textures[0] = rl.loadTexture("assets/brick.png") catch @panic("No se pudo cargar assets/brick.png");
     wall_textures[1] = rl.loadTexture("assets/bonewall.png") catch @panic("No se pudo cargar assets/bonewall.png");
     wall_textures[2] = rl.loadTexture("assets/whitewall.png") catch @panic("No se pudo cargar assets/whitewall.png");
+    sprite_texture = rl.loadTexture("assets/portal.png") catch @panic("No se pudo cargar assets/portal.png");
 }
 
 fn unloadTextures() void {
     for (wall_textures) |tex| {
         rl.unloadTexture(tex);
     }
+    rl.unloadTexture(sprite_texture);
 }
